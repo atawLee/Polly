@@ -27,6 +27,16 @@ internal static class CircuitBreaker
             ShouldHandle = new PredicateBuilder().Handle<SomeExceptionType>()
         };
 
+        // Circuit breaker using BreakDurationGenerator:
+        // The break duration is dynamically determined based on the properties of BreakDurationGeneratorArguments.
+        var optionsBreakDurationGenerator = new CircuitBreakerStrategyOptions
+        {
+            FailureRatio = 0.5,
+            SamplingDuration = TimeSpan.FromSeconds(10),
+            MinimumThroughput = 8,
+            BreakDurationGenerator = static args => new ValueTask<TimeSpan>(TimeSpan.FromMinutes(args.FailureCount)),
+        };
+
         // Handle specific failed results for HttpResponseMessage:
         var optionsShouldHandle = new CircuitBreakerStrategyOptions<HttpResponseMessage>
         {
@@ -68,12 +78,13 @@ internal static class CircuitBreaker
         new ResiliencePipelineBuilder().AddCircuitBreaker(optionsDefaults);
         new ResiliencePipelineBuilder<HttpResponseMessage>().AddCircuitBreaker(optionsStateProvider);
 
-        #endregion
+        #endregion circuit-breaker
     }
 
     public static void AntiPattern_CircuitAwareRetry()
     {
         #region circuit-breaker-anti-pattern-circuit-aware-retry
+
         var stateProvider = new CircuitBreakerStateProvider();
         var circuitBreaker = new ResiliencePipelineBuilder()
             .AddCircuitBreaker(new()
@@ -103,13 +114,15 @@ internal static class CircuitBreaker
             })
             .Build();
 
-        #endregion
+        #endregion circuit-breaker-anti-pattern-circuit-aware-retry
     }
 
     private static readonly ResiliencePropertyKey<TimeSpan?> SleepDurationKey = new("sleep_duration");
+
     public static void Pattern_CircuitAwareRetry()
     {
         #region circuit-breaker-pattern-circuit-aware-retry
+
         var circuitBreaker = new ResiliencePipelineBuilder()
             .AddCircuitBreaker(new()
             {
@@ -143,56 +156,7 @@ internal static class CircuitBreaker
             })
             .Build();
 
-        #endregion
-    }
-
-    public static void AntiPattern_SleepDurationGenerator()
-    {
-        #region circuit-breaker-anti-pattern-sleep-duration-generator
-        static IEnumerable<TimeSpan> GetSleepDuration()
-        {
-            for (int i = 1; i < 10; i++)
-            {
-                yield return TimeSpan.FromSeconds(i);
-            }
-        }
-
-        var sleepDurationProvider = GetSleepDuration().GetEnumerator();
-        sleepDurationProvider.MoveNext();
-
-        var circuitBreaker = new ResiliencePipelineBuilder()
-            .AddCircuitBreaker(new()
-            {
-                ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
-                BreakDuration = TimeSpan.FromSeconds(0.5),
-                OnOpened = async args =>
-                {
-                    await Task.Delay(sleepDurationProvider.Current);
-                    sleepDurationProvider.MoveNext();
-                }
-
-            })
-            .Build();
-
-        #endregion
-
-        #region circuit-breaker-anti-pattern-sleep-duration-generator-ext
-
-        circuitBreaker = new ResiliencePipelineBuilder()
-            .AddCircuitBreaker(new()
-            {
-                ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
-                BreakDuration = sleepDurationProvider.Current,
-                OnOpened = async args =>
-                {
-                    Console.WriteLine($"Break: {sleepDurationProvider.Current}");
-                    sleepDurationProvider.MoveNext();
-                }
-
-            })
-            .Build();
-
-        #endregion
+        #endregion circuit-breaker-pattern-circuit-aware-retry
     }
 
     public static async ValueTask AntiPattern_CircuitPerEndpoint()
@@ -201,6 +165,7 @@ internal static class CircuitBreaker
         static ResiliencePipeline GetCircuitBreaker() => ResiliencePipeline.Empty;
 
         #region circuit-breaker-anti-pattern-cb-per-endpoint
+
         // Defined in a common place
         var uriToCbMappings = new Dictionary<Uri, ResiliencePipeline>
         {
@@ -212,10 +177,12 @@ internal static class CircuitBreaker
         // Used in the downstream 1 client
         var downstream1Uri = new Uri("https://downstream1.com");
         await uriToCbMappings[downstream1Uri].ExecuteAsync(CallXYZOnDownstream1, CancellationToken.None);
-        #endregion
+
+        #endregion circuit-breaker-anti-pattern-cb-per-endpoint
     }
 
     private static ValueTask<HttpResponseMessage> IssueRequest() => ValueTask.FromResult(new HttpResponseMessage());
+
     public static async ValueTask AntiPattern_ReduceThrownExceptions()
     {
         #region circuit-breaker-anti-pattern-reduce-thrown-exceptions
@@ -242,7 +209,7 @@ internal static class CircuitBreaker
             // Your code goes here to process response
         }
 
-        #endregion
+        #endregion circuit-breaker-anti-pattern-reduce-thrown-exceptions
     }
 
     public static async ValueTask Pattern_ReduceThrownExceptions()
@@ -276,6 +243,6 @@ internal static class CircuitBreaker
             // Your code goes here to process the response
         }
 
-        #endregion
+        #endregion circuit-breaker-pattern-reduce-thrown-exceptions
     }
 }
